@@ -1,0 +1,58 @@
+---
+title: "From Poisson to a digital twin of a cloud API"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{From Poisson to a digital twin of a cloud API}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(collapse = TRUE, comment = "#>", fig.width = 6.5, fig.height = 3.8, eval = TRUE)
+library(poissonCloud)
+```
+
+## 1. The Poisson baseline
+
+If requests arrive independently at a steady rate, the number per window is Poisson.
+
+```{r base}
+overload_probability(40, 55)      # risk of exceeding 55 requests per window
+required_capacity(40, 0.999)      # capacity for a 99.9% SLA
+```
+
+## 2. Where Poisson breaks
+
+```{r data}
+d <- load_traffic()
+train <- which(d$day <= 7)
+m <- fit_traffic_model(d$requests[train], d$timestamp[train])
+m   # seasonal NB model: note the Pearson dispersion >> 1
+```
+
+After removing daily seasonality, the variance is still about 12 times the mean. Poisson's tail is far too thin:
+
+```{r coverage}
+te <- which(d$day >= 11 & d$is_incident == 0)
+c(poisson = mean(d$requests[te] <= traffic_quantile(as_poisson(m), d$timestamp[te], 0.999)),
+  negbin  = mean(d$requests[te] <= traffic_quantile(m, d$timestamp[te], 0.999)))
+```
+
+## 3. Burst model
+
+```{r hawkes}
+ev <- simulate_hawkes(mu = 5, alpha = 0.6, beta = 1, horizon = 300, seed = 1)
+fit_hawkes(ev, 300)$branching_ratio
+```
+
+## 4. Digital twin and policy comparison
+
+```{r twin, eval = FALSE}
+valid <- which(d$day >= 8 & d$day <= 10); test <- which(d$day >= 11)
+res <- compare_policies(d$requests, d$timestamp, m, train, valid, test)
+res$test
+```
+
+## 5. Dashboard and API
+
+`run_app()` starts the Shiny dashboard; `run_api()` exposes `/risk` and `/capacity` as JSON.

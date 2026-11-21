@@ -1,0 +1,15 @@
+test_that("pmf, cdf and quantile agree with base R", {
+  expect_equal(poisson_pmf(0:10, 3), stats::dpois(0:10, 3))
+  expect_equal(sum(poisson_pmf(0:300, 40)), 1, tolerance = 1e-12)
+  expect_equal(poisson_pmf(c(-1, 2.5), 3), c(0, 0))
+  expect_equal(poisson_cdf(0:80, 40), stats::ppois(0:80, 40))
+  expect_equal(poisson_cdf(55, 40, lower.tail = FALSE), stats::ppois(55, 40, lower.tail = FALSE), tolerance = 1e-12)
+  p <- c(0.01, 0.5, 0.9, 0.999, 0.999999)
+  expect_equal(poisson_quantile(p, 40), stats::qpois(p, 40))
+  expect_equal(poisson_quantile(c(0, 1), 5), c(0, Inf))
+})
+test_that("moments are consistent and bad inputs are rejected", {
+  m <- poisson_moments(40)
+  expect_equal(m[["mean"]], m[["variance"]])
+  expect_error(poisson_pmf(1, -2)); expect_error(poisson_pmf(1, c(1, 2))); expect_error(poisson_cdf(1, NA))
+})

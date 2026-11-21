@@ -1,0 +1,20 @@
+Package: poissonCloud
+Type: Package
+Title: Poisson Models and a Digital Twin for Cloud Capacity Planning
+Version: 2.0.0
+Authors@R: person("Sharone Vanelle", "Ndomtchi", email = "sharonevanelle@gmail.com", role = c("aut", "cre"))
+Description: Starts from the Poisson distribution and shows where it breaks on
+    real-looking web traffic (daily seasonality, bursts), then fixes it with a
+    seasonal negative-binomial traffic model and a Hawkes self-exciting process.
+    Includes a discrete-time digital twin of an autoscaling cluster (boot delay,
+    queue, SLO), policy optimisation, anomaly detection, M/M/c queueing
+    (Erlang C), a Shiny dashboard and a plumber API.
+License: MIT + file LICENSE
+Encoding: UTF-8
+Depends: R (>= 3.5.0)
+Imports: stats, graphics, utils, tools
+Suggests: testthat (>= 3.0.0), knitr, rmarkdown, shiny, plumber, readxl
+VignetteBuilder: knitr
+Config/testthat/edition: 3
+URL: https://github.com/sharone08/poissonCloud
+Config/roxygen2/version: 8.1.1

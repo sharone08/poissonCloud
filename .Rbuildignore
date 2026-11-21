@@ -1,0 +1,9 @@
+^.*\.Rproj$
+^\.Rproj\.user$
+^README\.md$
+^web$
+^slides$
+^docs$
+^analysis$
+^\.github$
+^inst/extdata/.*\.xlsx$
