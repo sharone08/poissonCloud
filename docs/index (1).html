@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Cloud Traffic Digital Twin</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>☁️</text></svg>">
+<style>
+:root{--bg:#f4f7fb;--card:#fff;--ink:#0b1d3a;--mut:#5f6f82;--teal:#2a9d8f;--red:#e63946;--amb:#f4a261;--line:#dde5ee;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media(prefers-color-scheme:dark){:root:not([data-theme=light]){--bg:#0b1426;--card:#13233f;--ink:#eaf1fb;--mut:#9db0c8;--line:#24385a}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+header{padding:28px 20px 8px;max-width:1100px;margin:auto}h1{margin:0;font-size:clamp(24px,4vw,36px)}header p{color:var(--mut);margin:.4em 0 0;max-width:70ch}
+main{max-width:1100px;margin:auto;padding:12px 20px 40px;display:grid;gap:16px;grid-template-columns:repeat(12,1fr)}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:18px}.c4{grid-column:span 4}.c8{grid-column:span 8}.c12{grid-column:span 12}
+@media(max-width:860px){.c4,.c8{grid-column:span 12}}
+h2{margin:0 0 10px;font-size:16px}label{display:block;margin:12px 0 2px;font-size:13px;color:var(--mut)}label b{color:var(--ink);float:right}
+input[type=range]{width:100%;accent-color:var(--teal)}select,input[type=text],button{font:inherit;padding:7px 10px;border-radius:8px;border:1px solid var(--line);background:var(--bg);color:var(--ink)}
+button{background:var(--teal);color:#fff;border:0;cursor:pointer;font-weight:600}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}.k{border-radius:10px;padding:12px;background:var(--bg)}.k small{color:var(--mut);display:block}.k span{font-size:24px;font-weight:700}
+.bad{color:var(--red)}.good{color:var(--teal)}table{width:100%;border-collapse:collapse}td,th{padding:6px 8px;border-bottom:1px solid var(--line);text-align:right}th:first-child,td:first-child{text-align:left}
+svg{width:100%;height:auto;display:block}.note{color:var(--mut);font-size:13px;margin-top:8px}
+</style></head><body>
+<header><h1>☁️ Cloud Traffic Digital Twin</h1>
+<p>Poisson is the textbook model of web traffic. Move the sliders to see what happens when real traffic is <em>bursty</em>: the risk is under-estimated, sometimes by orders of magnitude.</p></header>
+<main>
+<section class="card c4"><h2>Traffic and capacity</h2>
+<label>Mean rate (requests/s) <b id="lv"></b></label><input id="lam" type="range" min="5" max="150" value="50">
+<label>Burstiness θ (small = bursty, large = Poisson) <b id="tv"></b></label><input id="th" type="range" min="5" max="500" value="43">
+<label>Capacity (× mean rate) <b id="cv"></b></label><input id="cx" type="range" min="1" max="2" step="0.01" value="1.2">
+<label>SLA (share of 10 s windows absorbed)</label><select id="sla"><option>0.99</option><option selected>0.999</option><option>0.9999</option></select>
+<p class="note">Counts per 10 s window: Poisson(λ) versus negative binomial with Var = λ + λ²/θ. Default θ = 43 is the value fitted on the project dataset.</p></section>
+<section class="card c8"><h2>Distribution of requests per 10 s window</h2><svg id="pmf" viewBox="0 0 700 260"></svg>
+<div class="kpis" style="margin-top:12px" id="kp"></div></section>
+<section class="card c12"><h2>24 h autoscaling simulation</h2>
+<button id="run">Run simulation</button> <span class="note">same queue model as the R package (15 req/s per instance, $0.10 per instance-hour, SLO: backlog drains within 1 s)</span>
+<svg id="sim" viewBox="0 0 900 260" style="margin-top:10px"></svg><table id="tab"></table></section>
+<section class="card c12"><h2>Call the R code (optional)</h2>
+<p class="note">Start the R backend with <code>poissonCloud::run_api()</code>, then check that R and this page agree.</p>
+<input id="api" type="text" value="http://127.0.0.1:8000" size="28"> <button id="chk">Ask R</button><pre id="out" class="note"></pre></section>
+</main>
+<script>
+const $=id=>document.getElementById(id),BIN=10,CAP=15,PRICE=0.1;
+function lg(x){const c=[76.18009172947146,-86.50532032941677,24.01409824083091,-1.231739572450155,0.1208650973866179e-2,-0.5395239384953e-5];let y=x,t=x+5.5;t-=(x+.5)*Math.log(t);let s=1.000000000190015;for(const k of c){y++;s+=k/y}return -t+Math.log(2.5066282746310005*s/x)}
+const pP=(k,m)=>Math.exp(k*Math.log(m)-m-lg(k+1));
+const pN=(k,m,t)=>Math.exp(lg(k+t)-lg(t)-lg(k+1)+t*Math.log(t/(t+m))+k*Math.log(m/(t+m)));
+const arr=(f,K)=>{const a=new Float64Array(K+1);for(let k=0;k<=K;k++)a[k]=f(k);return a};
+const tail=(a,c)=>{let s=0;for(let k=Math.floor(c)+1;k<a.length;k++)s+=a[k];return s};
+const quant=(a,p)=>{let s=0;for(let k=0;k<a.length;k++){s+=a[k];if(s>=p)return k}return a.length-1};
+const kmax=(m,t)=>Math.ceil(m+12*Math.sqrt(m+m*m/t)+30);
+const fmt=p=>p<1e-4?p.toExponential(1):(100*p).toFixed(p<.01?3:2)+'%';
+function dists(m,t){const K=kmax(m,t);return[arr(k=>pP(k,m),K),arr(k=>pN(k,m,t),K)]}
+function update(){
+ const lam=+$('lam').value,t=+$('th').value,cx=+$('cx').value,sla=+$('sla').value,m=lam*BIN,cap=m*cx;
+ $('lv').textContent=lam+' req/s';$('tv').textContent=t;$('cv').textContent='×'+cx.toFixed(2);
+ const [P,N]=dists(m,t),pp=tail(P,cap),pn=tail(N,cap),qp=quant(P,sla),qn=quant(N,sla);
+ $('kp').innerHTML=`<div class=k><small>Overload risk, Poisson</small><span class=good>${fmt(pp)}</span></div>
+ <div class=k><small>Overload risk, bursty</small><span class=bad>${fmt(pn)}</span></div>
+ <div class=k><small>Risk under-estimated</small><span class=bad>×${(pn/Math.max(pp,1e-300)).toFixed(pn/pp>100?0:1)}</span></div>
+ <div class=k><small>Capacity for SLA (req/s)</small><span>${(qp/BIN).toFixed(0)} → <span class=bad>${(qn/BIN).toFixed(0)}</span></span></div>`;
+ const lo=Math.max(0,Math.floor(m-5*Math.sqrt(m+m*m/t))),hi=Math.min(N.length-1,Math.ceil(m+6*Math.sqrt(m+m*m/t))),mx=Math.max(...P.slice(lo,hi),...N.slice(lo,hi)),w=700/(hi-lo+1);
+ let s='';for(let k=lo;k<=hi;k++){const h=P[k]/mx*220;s+=`<rect x="${(k-lo)*w}" y="${240-h}" width="${w*.9}" height="${h}" fill="${k>cap?'var(--red)':'var(--teal)'}" opacity=".85"/>`}
+ s+=`<polyline fill="none" stroke="var(--amb)" stroke-width="2.5" points="${Array.from({length:hi-lo+1},(_,i)=>`${(i+.45)*w},${240-N[lo+i]/mx*220}`).join(' ')}"/>`;
+ s+=`<text x="8" y="16" fill="var(--mut)" font-size="12">bars: Poisson (red = overload) · orange line: bursty negative binomial</text>`;
+ s+=`<text x="8" y="256" fill="var(--mut)" font-size="12">${lo}</text><text x="${700-40}" y="256" fill="var(--mut)" font-size="12">${hi}</text>`;$('pmf').innerHTML=s}
+['lam','th','cx','sla'].forEach(i=>$(i).addEventListener('input',update));update();
+// ---- simulation
+function rng(a){return()=>{a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296}}
+function run(){const R=rng(7),lam=+$('lam').value,th=+$('th').value,nrm=()=>Math.sqrt(-2*Math.log(R()+1e-12))*Math.cos(2*Math.PI*R());
+ const gam=a=>{if(a<1)return gam(a+1)*Math.pow(R(),1/a);const d=a-1/3,c=1/Math.sqrt(9*d);for(;;){let x=nrm(),v=1+c*x;if(v<=0)continue;v=v*v*v;const u=R();if(Math.log(u)<.5*x*x+d-d*v+d*Math.log(v))return d*v}};
+ const pois=m=>{if(m>30)return Math.max(0,Math.round(m+Math.sqrt(m)*nrm()));let L=Math.exp(-m),k=0,p=1;do{k++;p*=R()}while(p>L);return k-1};
+ const shape=h=>.45+.55*(Math.exp(-(((h-12.5)/2.2)**2)/2)*.8+Math.exp(-(((h-20)/2)**2)/2)),n=8640,mean=[],y=[];
+ for(let i=0;i<n;i++){const h=i*BIN/3600,m=lam*BIN*shape(h)/1.0;mean.push(m);y.push(pois(m*gam(th)/th))}
+ const pol={poisson:i=>0,nb:i=>0},inst={};const slot=60,qs={P:[],N:[]};
+ for(let s=0;s<n/slot;s++){const m=mean[s*slot+30],[P,N]=dists(m,th);qs.P.push(quant(P,.999));qs.N.push(quant(N,.999))}
+ inst.static=Array(n).fill(Math.max(2,Math.ceil(Math.max(...qs.N)/(CAP*BIN))));
+ inst.poisson=Array.from({length:n},(_,i)=>Math.max(2,Math.ceil(qs.P[Math.floor(i/slot)]/(CAP*BIN))));
+ inst.nb=Array.from({length:n},(_,i)=>Math.max(2,Math.ceil(qs.N[Math.floor(i/slot)]/(CAP*BIN))));
+ const sim=a=>{let b=0,v=0,hrs=0;for(let i=0;i<n;i++){const r=a[i]*CAP,c=r*BIN,l=y[i]+b,sv=Math.min(l,c);b=l-sv;if(b>5*r)b=5*r;if(b/r>1)v++;hrs+=a[i]*BIN/3600}return{cost:hrs*PRICE,v:v/n}};
+ const res={static:sim(inst.static),poisson:sim(inst.poisson),nb:sim(inst.nb)},nm={static:'Static peak (sized with NB)',poisson:'Poisson forecast, 99.9%',nb:'Bursty (NB) forecast, 99.9%'};
+ $('tab').innerHTML='<tr><th>Policy</th><th>Cost / day</th><th>SLO violations</th></tr>'+Object.keys(res).map(k=>`<tr><td>${nm[k]}</td><td>$${res[k].cost.toFixed(2)}</td><td class="${res[k].v>.001?'bad':'good'}">${(100*res[k].v).toFixed(2)}%</td></tr>`).join('');
+ const my=Math.max(...y)/BIN*1.05,pts=(f)=>Array.from({length:n/6},(_,i)=>`${i/(n/6)*900},${250-f(i*6)/my*240}`).join(' ');
+ $('sim').innerHTML=`<polyline fill="none" stroke="var(--line)" stroke-width="1.5" points="${pts(i=>y[i]/BIN)}"/><polyline fill="none" stroke="var(--red)" stroke-width="2" points="${pts(i=>inst.poisson[i]*CAP)}"/><polyline fill="none" stroke="var(--teal)" stroke-width="2.5" points="${pts(i=>inst.nb[i]*CAP)}"/><text x="8" y="14" fill="var(--mut)" font-size="12">grey: demand · red: Poisson capacity · green: bursty-model capacity (req/s over 24 h)</text>`}
+$('run').onclick=run;run();
+$('chk').onclick=async()=>{const u=$('api').value.replace(/\/$/,''),m=+$('lam').value*BIN,t=+$('th').value,c=m*+$('cx').value;
+ try{const r=await (await fetch(`${u}/risk?lambda=${m}&capacity=${c}&theta=${t}`)).json(),[P,N]=dists(m,t),g=v=>[].concat(v)[0];
+ $('out').textContent=`R:  Poisson ${g(r.poisson).toExponential(4)} | NB ${g(r.negbin).toExponential(4)}\nJS: Poisson ${tail(P,c).toExponential(4)} | NB ${tail(N,c).toExponential(4)}`}
+ catch(e){$('out').textContent='R API not reachable: '+e.message}};
+</script></body></html>
